@@ -7,13 +7,30 @@ import logging
 import math
 import re
 
-from app.constants.geo import GEO_COUNTRY, KM_PER_MILE
+from app.constants.geo import GEO_COUNTRY, KM_PER_MILE, US_STATE_CODES
 
 log = logging.getLogger("app.geo")
 
 _dist = None
 _failed = False
 _lock = asyncio.Lock()
+
+
+def state_code(state: str | None) -> str | None:
+    """'Utah' / 'ut' / 'UT' → 'UT'; unknown → None."""
+    if not state:
+        return None
+    text = state.strip()
+    if len(text) == 2 and text.isalpha():
+        return text.upper()
+    return US_STATE_CODES.get(text.lower())
+
+
+def same_state(a: str | None, b: str | None) -> bool:
+    ca, cb = state_code(a), state_code(b)
+    if ca and cb:
+        return ca == cb
+    return bool(a and b) and a.strip().lower() == b.strip().lower()
 
 
 def _zip5(zipcode: str | None) -> str | None:

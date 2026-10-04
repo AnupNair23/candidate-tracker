@@ -1,0 +1,26 @@
+# secrets: never part of the build context
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# vcs / editor / os
+.git
+.gitignore
+.vscode/
+.idea/
+**/.DS_Store
+
+# build outputs and dependencies (rebuilt inside the image)
+**/node_modules
+frontend/dist
+backend/.venv
+backend/.cache
+
+# python / test caches
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+frontend/coverage

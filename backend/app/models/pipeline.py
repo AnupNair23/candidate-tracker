@@ -30,6 +30,17 @@ class Deps:
 # ------------------------------------------------------------------ retrieval
 
 
+@dataclass(frozen=True)
+class TalentQuery:
+    """One TalentSearch call in the retrieval plan."""
+
+    label: str
+    skills: tuple[str, ...]
+    title: str | None
+    states: tuple[str, ...]
+    resume_count: int
+
+
 @dataclass
 class Pool:
     records: dict[str, CandidateRecord] = field(default_factory=dict)

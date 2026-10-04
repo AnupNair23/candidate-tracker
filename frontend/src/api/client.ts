@@ -56,8 +56,13 @@ export const api = {
       `${API_BASE}/candidates/${encodeURIComponent(candidateId)}${nameHint ? `?name=${encodeURIComponent(nameHint)}` : ''}`,
       { signal },
     ),
-  interactions: (candidateId: string, signal?: AbortSignal) =>
-    request(CandidateInteractionsSchema, `${API_BASE}/candidates/${encodeURIComponent(candidateId)}/interactions`, { signal }),
+  /** Starts across all jobs, plus submittals to `jobId` (JobDiva only returns submittals for a given job). */
+  interactions: (candidateId: string, jobId?: string, signal?: AbortSignal) =>
+    request(
+      CandidateInteractionsSchema,
+      `${API_BASE}/candidates/${encodeURIComponent(candidateId)}/interactions${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`,
+      { signal },
+    ),
   resume: (candidateId: string, signal?: AbortSignal) =>
     request(CandidateResumeSchema, `${API_BASE}/candidates/${encodeURIComponent(candidateId)}/resume`, { signal }),
 }

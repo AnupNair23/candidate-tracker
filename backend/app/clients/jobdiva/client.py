@@ -43,6 +43,7 @@ from app.constants.jobdiva import (
     CREDENTIALS_REJECTED_MARKERS,
     DEFAULT_MAX_RETURNED,
     ERROR_MESSAGE_CHARS,
+    LINKED_CACHE_TTL_S,
     OPEN_JOB_STATUS,
     QUICK_CANDIDATE_SEARCH_PATH,
     QUICK_SEARCH_MAX_RETURNED,
@@ -50,8 +51,8 @@ from app.constants.jobdiva import (
     SEARCH_JOB_PATH,
     SEARCH_START_PATH,
     SEARCH_SUBMITTAL_PATH,
-    SUBMITTAL_CANDIDATE_WILDCARD,
-    UNIVERSAL_SEARCH_PATH,
+    SUBMITTAL_LASTNAME_PREFIXES,
+    TALENT_SEARCH_PATH,
     VALIDATION_ERROR_PREFIXES,
 )
 from app.core.config import Settings
@@ -144,6 +145,7 @@ class JobDivaClient:
         self._pace_lock = asyncio.Lock()
         self._last_start = 0.0
         self.auth_calls = 0
+        self._submittal_cache: dict[str, tuple[float, list[dict]]] = {}
         self.sleep = asyncio.sleep  # injectable for tests
 
     async def aclose(self) -> None:
@@ -340,11 +342,30 @@ class JobDivaClient:
         return next((r for r in rows if str(r.get("id") or r.get("jobid")) == str(job_id)), None)
 
     async def job_submittals(self, job_id: str, budget: CallBudget | None = None) -> list[dict]:
-        # searchSubmittal rejects a job-only search ("please specify at least one candidate parameter"), so a
-        # wildcard last name is sent alongside jobid. JobDiva accepts it (HTTP 200); confirm against a job that
-        # has submittals that it returns them all.
-        params = {"jobid": job_id, **SUBMITTAL_CANDIDATE_WILDCARD}
-        return as_list(await self.request("GET", SEARCH_SUBMITTAL_PATH, params=params, budget=budget))
+        """All submittals for a job via a last-name prefix sweep (a%…z%); see SUBMITTAL_LASTNAME_PREFIXES."""
+        cached = self._submittal_cache.get(job_id)
+        if cached and time.monotonic() - cached[0] < LINKED_CACHE_TTL_S:
+            return cached[1]
+        pages = await asyncio.gather(
+            *(
+                self.request(
+                    "GET",
+                    SEARCH_SUBMITTAL_PATH,
+                    params={"jobid": job_id, "candidatelastname": f"{prefix}%"},
+                    budget=budget,
+                )
+                for prefix in SUBMITTAL_LASTNAME_PREFIXES
+            )
+        )
+        rows: list[dict] = []
+        seen: set = set()
+        for row in (r for page in pages for r in as_list(page)):
+            key = row.get("submittalid") or (row.get("candidateidinjd"), row.get("submittaldate"))
+            if key not in seen:
+                seen.add(key)
+                rows.append(row)
+        self._submittal_cache[job_id] = (time.monotonic(), rows)
+        return rows
 
     async def job_starts(
         self, job_id: str, *, offset: int, max_returned: int, budget: CallBudget | None = None
@@ -352,32 +373,27 @@ class JobDivaClient:
         params = {"jobId": job_id, "offset": offset, "maxreturned": max_returned}
         return as_list(await self.request("GET", SEARCH_START_PATH, params=params, budget=budget))
 
-    async def universal_search(
-        self, criteria: str, *, offset: int, max_returned: int, budget: CallBudget | None = None
-    ) -> tuple[list[dict], int | None]:
-        body = {
-            "criteria": criteria,
-            "includeCandidates": True,
-            "includeJobs": False,
-            "includeContacts": False,
-            "includeCompanies": False,
-            "includeNotes": False,
-            "includeContactNotes": False,
-            "includeOpportunity": False,
-            "maxReturned": max_returned,
-            "offset": offset,
-            "supportFuzzyMatching": False,
-        }
-        data = await self.request("POST", UNIVERSAL_SEARCH_PATH, json=body, budget=budget)
-        cores = as_list(data)
-        core = next((c for c in cores if "candidate" in str(c.get("corename", "")).lower()), None)
-        if core is None and len(cores) == 1:
-            core = cores[0]
-        if core is None:
-            return [], 0
-        docs = as_list(core.get("documents"))
-        found = core.get("numfound")
-        return docs, int(found) if str(found).isdigit() else None
+    async def talent_search(
+        self,
+        *,
+        skills: Sequence[str] = (),
+        title: str | None = None,
+        states: Sequence[str] = (),
+        resume_count: int,
+        budget: CallBudget | None = None,
+    ) -> list[dict]:
+        """v2 TalentSearch (the one approved v2 call). Skills are ANDed; results are capped by resumeCount."""
+        body: dict[str, Any] = {"resumeCount": resume_count}
+        if skills:
+            body["skills"] = list(skills)
+        if title:
+            body["titleSearch"] = title
+        if states:
+            body["states"] = list(states)
+        if not (skills or title):
+            # An unfiltered TalentSearch returns the whole candidate database.
+            raise ValueError("TalentSearch needs at least one skill or a title")
+        return as_list(await self.request("POST", TALENT_SEARCH_PATH, json=body, budget=budget))
 
     async def quick_candidate_search(
         self, criteria: str, *, max_returned: int = QUICK_SEARCH_MAX_RETURNED
@@ -409,10 +425,12 @@ class JobDivaClient:
                 params[key] = value
         return as_list(await self.request("POST", SEARCH_CANDIDATE_PROFILE_PATH, params=params, budget=budget))
 
-    async def candidate_submittals(self, candidate_id: str, budget: CallBudget | None = None) -> list[dict]:
-        return as_list(
-            await self.request("GET", SEARCH_SUBMITTAL_PATH, params={"candidateid": candidate_id}, budget=budget)
-        )
+    async def candidate_job_submittals(
+        self, candidate_id: str, job_id: str, budget: CallBudget | None = None
+    ) -> list[dict]:
+        """A candidate's submittals to one job. JobDiva rejects candidate-only searchSubmittal calls."""
+        params = {"candidateid": candidate_id, "jobid": job_id}
+        return as_list(await self.request("GET", SEARCH_SUBMITTAL_PATH, params=params, budget=budget))
 
     async def candidate_starts(
         self, candidate_id: str, *, max_returned: int = DEFAULT_MAX_RETURNED, budget: CallBudget | None = None

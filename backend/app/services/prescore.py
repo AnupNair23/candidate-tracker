@@ -32,7 +32,7 @@ from app.constants.ranking import (
 from app.models.intent import SearchIntent
 from app.models.jobdiva import CandidateRecord, Job
 from app.models.pipeline import Pool, PreScore
-from app.services.geo import distances_miles
+from app.services.geo import distances_miles, same_state
 from app.utils.text import norm, term_in_text, tokens
 
 
@@ -90,11 +90,7 @@ def prescore(
             if loc.required and distance_mi > radius:
                 ps.excluded = "location"
         elif rec.state and loc.state:
-            ps.location_fit = (
-                SAME_STATE_LOCATION_FIT
-                if rec.state.strip().lower() == loc.state.strip().lower()
-                else OTHER_STATE_LOCATION_FIT
-            )
+            ps.location_fit = SAME_STATE_LOCATION_FIT if same_state(rec.state, loc.state) else OTHER_STATE_LOCATION_FIT
 
     yrs = intent.years
     if yrs is not None and rec.years_experience is not None:

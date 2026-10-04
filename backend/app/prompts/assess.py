@@ -20,6 +20,8 @@ verdicts — one per requirement id in <requirements>:
 profile value that conflicts with it).
 - unknown: no evidence either way. Missing information is unknown, never not_met. Do not infer that someone \
 lacks a skill because it is not mentioned.
+- A "JobDiva resume search" item means JobDiva's resume index found that keyword in the candidate's resume. It \
+shows the skill is mentioned, not its depth or recency: treat it as partial unless other evidence shows real use.
 - evidence_ids: ids from the same candidate's block that directly support the verdict. met, partial and \
 not_met need at least one; unknown has none.
 - Never invent experience, employers, dates, skills or credentials that are not in the evidence.

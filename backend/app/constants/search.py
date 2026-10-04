@@ -17,23 +17,16 @@ SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Content-
 # ------------------------------------------------------------------ retrieval
 # Funnel query labels that the shortfall explanation and the keyword-search warning single out.
 LINKED_QUERY_LABEL = "Already linked to this job"
-LOCATION_QUERY_LABEL = "Profiles in job location"
 # Status shown for a job-linked candidate when JobDiva gives none.
 LINKED_SUBMITTAL_STATUS = "Submitted"
 LINKED_START_STATUS = "Started"
 
 LINKED_STARTS_PAGES = 2  # searchStart pages fetched for candidates already linked to the job
-LOCATION_SEARCH_PAGES = 2  # searchCandidateProfile pages fetched by the location search
-# The location search runs only while the pool is below pool_target // LOCATION_SEARCH_TARGET_DIVISOR.
-LOCATION_SEARCH_TARGET_DIVISOR = 2
-
-# Keyword query building (strict → broad).
-MAX_QUERY_TITLES = 6  # distinct titles + synonyms used in queries
-MAX_QUERY_MUST_SKILLS = 4  # must-have skills ANDed together
-MAX_QUERY_ANY_SKILLS = 6  # key skills ORed in "Title + any key skill"
-MAX_PLAIN_TITLE_QUERY_SKILLS = 3  # must-have skills in the non-boolean "Title + must-have skills" query
-MAX_SINGLE_SKILL_QUERIES = 3  # one broad query per key skill, for the first N key skills
-MAX_QUERY_KEYWORDS = 5  # keywords used when no other query could be built
+# TalentSearch query plan (strict → broad). Queries are national: the `states` filter took ~20 s per query live and
+# returned nothing for smaller states, so location is ranked locally in the pre-score instead.
+MAX_SINGLE_SKILL_QUERIES = 8  # one query per key skill (must-haves first), for the first N key skills
+MAX_TITLE_QUERIES = 2  # distinct titles searched with titleSearch
+TALENT_RESUME_COUNT_BROAD = 40  # resumeCount per TalentSearch query
 
 # ------------------------------------------------------------------ hydration
 MAX_INTERACTIONS = 25  # newest interactions kept per candidate (same-client ones beyond this are also kept)

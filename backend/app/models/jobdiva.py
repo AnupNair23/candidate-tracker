@@ -54,7 +54,8 @@ class CandidateRecord(BaseModel):
     work_authorization: str | None = None
     updated_on: str | None = None
     qualifications: list[Qualification] = Field(default_factory=list)
-    search_text: str | None = None  # text returned by keyword search, if any
+    search_text: str | None = None  # text returned by candidate search (TalentSearch ABSTRACT), if any
+    search_matches: list[str] = Field(default_factory=list)  # skills/titles JobDiva's resume search matched
     resume_text: str | None = None
     interactions: list[Interaction] = Field(default_factory=list)
     source_status: dict[str, Literal["ok", "none", "unavailable", "not_fetched"]] = Field(default_factory=dict)

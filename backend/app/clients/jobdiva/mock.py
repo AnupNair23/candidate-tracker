@@ -273,6 +273,7 @@ def build_dataset(seed: int = 7, n_jobs: int = 45, n_candidates: int = 160) -> D
             "phone": f"(256) 555-{1000 + c:04d}",
             "dateUpdated": f"202{4 + c % 3}-0{1 + c % 9}-15",
             "_employer": employer,
+            "_lastNote": rng.choice(NOTES),
         }
         if c % 9:
             cand["yearsOfExperience"] = years
@@ -358,6 +359,9 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
             headers={"Content-Type": "application/json", **(headers or {})},
         )
 
+    def _error(self, message: str) -> httpx.Response:
+        return self._json({"status": 500, "error": "Internal Server Error", "message": message}, 500)
+
     def _doc(self, c: dict) -> dict:
         return {k: v for k, v in c.items() if not k.startswith("_") and v != ""}
 
@@ -388,6 +392,8 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
             size = int(q.get("maxReturned", 30) or 30)
             return self._json(self.ds.jobs[offset : offset + size])
         if path == "/api/jobdiva/searchSubmittal":
+            # Mirrors live JobDiva (verified 2026-10-04): needs a candidate parameter AND a job parameter; a
+            # last-name prefix such as "a%" is a wildcard, a bare "%" is not.
             candidate_params = (
                 "candidateid",
                 "candidatefirstname",
@@ -397,23 +403,26 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
                 "candidatecity",
                 "candidatestate",
             )
-            if not any(q.get(k) for k in candidate_params):  # mirrors live JobDiva behaviour (verified 2026-10-04)
-                return self._json(
-                    {
-                        "status": 500,
-                        "error": "Internal Server Error",
-                        "message": (
-                            "Error: please specify at least one candidate parameter: ID, First Name, Last Name, Email, "
-                            "Phone, City, State."
-                        ),
-                    },
-                    500,
+            if not any(q.get(k) for k in candidate_params):
+                return self._error(
+                    "Error: please specify at least one candidate parameter: ID, First Name, Last Name, Email, "
+                    "Phone, City, State."
                 )
-            if "jobid" in q:
-                return self._json([s for s in self.ds.submittals if str(s["job id in jd"]) == q["jobid"]])
-            if "candidateid" in q:
-                return self._json([s for s in self.ds.submittals if str(s["candidate id in jd"]) == q["candidateid"]])
-            return self._json([])
+            if not any(q.get(k) for k in ("jobid", "joboptionalref", "companyname")):
+                return self._error(
+                    "Error: missing job parameters: Job Ref#, Company name. Please specify job ID or job parameters."
+                )
+            rows = [s for s in self.ds.submittals if str(s["job id in jd"]) == q.get("jobid", "")]
+            if q.get("candidateid"):
+                rows = [s for s in rows if str(s["candidate id in jd"]) == q["candidateid"]]
+            last = q.get("candidatelastname")
+            if last:
+                prefix = last[:-1].lower() if last.endswith("%") else None
+                if prefix:
+                    rows = [s for s in rows if s["candidate last name"].lower().startswith(prefix)]
+                else:
+                    rows = [s for s in rows if s["candidate last name"].lower() == last.lower()]
+            return self._json(rows)
         if path == "/api/jobdiva/searchStart":
             size = int(q.get("maxreturned", 30) or 30)
             if "jobId" in q:
@@ -424,12 +433,44 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
                 rows = []
             return self._json(rows[offset : offset + size])
         if path == "/api/jobdiva/us/universalSearchByPermission":
+            # Live behaviour: the candidate index matches names, not skills or titles.
             body = json.loads(request.content or b"{}")
             crit = body.get("criteria", "")
             size, off = int(body.get("maxReturned", 30)), int(body.get("offset", 0))
-            hits = [c for c in self.ds.candidates if _matches(crit, f"{c['title']} {c['skills']} {c['resumeText']}")]
+            hits = [c for c in self.ds.candidates if _matches(crit, f"{c['firstName']} {c['lastName']}")]
             docs = [self._doc(c) for c in hits[off : off + size]]
             return self._json([{"coreName": "candidate", "documents": docs, "numFound": len(hits), "start": off}])
+        if path == "/apiv2/jobdiva/TalentSearch":
+            body = json.loads(request.content or b"{}")
+            skills = body.get("skills") or []
+            title = body.get("titleSearch")
+            states = {s.upper() for s in body.get("states") or []}
+            if not skills and not title:
+                return self._json({"message": "TalentSearch needs criteria"}, 400)
+            hits = [
+                c
+                for c in self.ds.candidates
+                if all(_matches(f'"{sk}"', f"{c['skills']} {c['resumeText']}") for sk in skills)
+                and (not title or _matches(f'"{title}"', c["title"]))
+                and (not states or c["state"].upper() in states)
+            ]
+            rows = [
+                {
+                    "CANDIDATEID": c["candidateId"],
+                    "FIRSTNAME": c["firstName"],
+                    "LASTNAME": c["lastName"],
+                    "CITY": c["city"],
+                    "STATE": c["state"],
+                    "COUNTRY": "US",
+                    "PHONE": c["phone"],
+                    "ABSTRACT": c["resumeText"].split("SUMMARY\n", 1)[-1][:56],
+                    "LASTNOTE": c["_lastNote"],
+                    "AVAILABLE": True,
+                    "RECEIVED": c["dateUpdated"],
+                }
+                for c in hits[: int(body.get("resumeCount", 25))]
+            ]
+            return self._json(rows)
         if path == "/api/jobdiva/us/quickCandidateProfileSearch":
             crit = q.get("criteria", "").lower()
             hits = [

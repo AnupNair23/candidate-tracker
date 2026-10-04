@@ -63,13 +63,11 @@ async def enrich_stage2(
     async def one(cid: str) -> None:
         nonlocal done
         rec = pool.records[cid]
-        interactions: list[Interaction] = []
+        interactions: list[Interaction] = list(rec.interactions)  # e.g. LASTNOTE captured during retrieval
 
-        subs = await guarded("submissions", rec, client.candidate_submittals(cid, budget=budget))
-        if subs is not None:
-            mapped = [x for i, row in enumerate(subs) for x in map_submittal(row, i)]
-            interactions.extend(mapped)
-            rec.source_status["submissions"] = "ok" if mapped else "none"
+        # Submittals to this job came from the job's A–Z searchSubmittal sweep during retrieval (JobDiva has no
+        # candidate-only submittal search); cross-job outcomes (placements, rejections) come from searchStart.
+        rec.source_status["submissions"] = "ok" if any(i.type == "submissions" for i in interactions) else "none"
         starts = await guarded(
             "placements", rec, client.candidate_starts(cid, max_returned=settings.jobdiva_page_size, budget=budget)
         )
@@ -93,7 +91,8 @@ async def enrich_stage2(
             else:
                 rec.source_status["resume"] = "none" if resumes_ok else "unavailable"
         else:
-            rec.source_status.setdefault("notes", "unavailable")
+            has_last_note = any(i.interaction_id.startswith("lastnote-") for i in interactions)
+            rec.source_status.setdefault("notes", "ok" if has_last_note else "unavailable")
             rec.source_status.setdefault("resume", "unavailable")
 
         rec.interactions = _cap_interactions(dedupe_interactions(interactions), job.company)

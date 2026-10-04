@@ -109,16 +109,6 @@ async def profile(
         except JobDivaError:
             pass
     if not found:
-        try:
-            for row in await client.candidate_submittals(candidate_id):
-                if candidate_id_of(row) == candidate_id:
-                    map_candidate(row, rec)
-                    found = True
-        except FATAL_ERRORS:
-            raise
-        except JobDivaError:
-            pass
-    if not found:
         raise JobDivaNotFound(f"Candidate {candidate_id} could not be found through the JobDiva search API", status=404)
 
     work_history: list[dict[str, Any]] = []
@@ -157,9 +147,16 @@ def _split(items: list[Interaction]) -> tuple[list[Interaction], list[Interactio
     return notes, history
 
 
-async def interactions(client: JobDivaClient, settings: Settings, candidate_id: str) -> dict[str, Any]:
+async def _no_rows() -> list[dict]:
+    return []
+
+
+async def interactions(
+    client: JobDivaClient, settings: Settings, candidate_id: str, job_id: str | None = None
+) -> dict[str, Any]:
+    """Starts/activities across all jobs, plus submittals to `job_id` (JobDiva requires a job for submittals)."""
     results = await asyncio.gather(
-        client.candidate_submittals(candidate_id),
+        client.candidate_job_submittals(candidate_id, job_id) if job_id else _no_rows(),
         client.candidate_starts(candidate_id, max_returned=settings.jobdiva_page_size),
         return_exceptions=True,
     )

@@ -1,0 +1,34 @@
+# Render Blueprint: one Docker web service (UI + API) behind HTTP basic auth.
+# Spec: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: candidate-tracker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit # replaces the deprecated `autoDeploy: true`
+    envVars:
+      # Secrets: Render prompts for these on first deploy (never committed).
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JOBDIVA_CLIENT_ID
+        sync: false
+      - key: JOBDIVA_USERNAME
+        sync: false
+      - key: JOBDIVA_PASSWORD
+        sync: false
+      - key: BASIC_AUTH_USER
+        sync: false
+      - key: BASIC_AUTH_PASSWORD
+        sync: false
+      # Plain configuration
+      - key: CLAUDE_MODEL
+        value: claude-opus-5-5
+      - key: LLM_MODE
+        value: claude
+      - key: JOBDIVA_MOCK
+        value: "false"
+      - key: JOBDIVA_USE_BI
+        value: "false"

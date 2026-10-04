@@ -13,6 +13,8 @@ import { formatDate, locationLine } from '../../utils/format'
 
 type Props = {
   candidateId: string
+  /** Job whose submittal history to include. */
+  jobId?: string
   nameHint?: string
   /** Shortlist entry for the *current job* only — never another job's. */
   entry?: ShortlistEntry
@@ -111,7 +113,7 @@ function InteractionItem({ it }: { it: Interaction }) {
   )
 }
 
-export function CandidateDrawer({ candidateId, nameHint, entry, intent, onClose }: Props) {
+export function CandidateDrawer({ candidateId, jobId, nameHint, entry, intent, onClose }: Props) {
   const [showResume, setShowResume] = useState(false)
   const profile = useQuery({
     queryKey: ['candidate', candidateId],
@@ -123,9 +125,9 @@ export function CandidateDrawer({ candidateId, nameHint, entry, intent, onClose 
     retry: false,
   })
   const history = useQuery({
-    queryKey: ['interactions', candidateId],
+    queryKey: ['interactions', candidateId, jobId],
     queryFn: async ({ signal }) => {
-      const data = await api.interactions(candidateId, signal)
+      const data = await api.interactions(candidateId, jobId, signal)
       if (data.candidate_id !== candidateId) throw mismatch()
       return data
     },

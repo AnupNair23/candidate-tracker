@@ -26,7 +26,7 @@ cd frontend && npm install && npm run dev
 
 To run with no credentials, start the backend with `JOBDIVA_MOCK=true` for a synthetic JobDiva dataset, `LLM_MODE=stub` for a keyword matcher instead of Claude, or both. The UI shows a "Dev mode" badge whenever either is on.
 
-Tests: `cd backend && uv run pytest` (34 tests) and `cd frontend && npm test` (13 tests). Neither calls JobDiva or Claude.
+Tests: `cd backend && uv run pytest` (45 tests) and `cd frontend && npm test` (13 tests). Neither calls JobDiva or Claude.
 
 ## Project structure
 
@@ -112,29 +112,49 @@ frontend/src/
 - `SEARCH_DEADLINE_S` (120): time limit per search.
 - `SHORTLIST_SIZE` (30): candidates shown.
 
-## JobDiva v1 integration
+## JobDiva integration (v1, plus one v2 call)
 
 | Need | Endpoint |
 |---|---|
 | Auth | `GET /api/authenticate`. Any auth-header failure triggers one re-authentication, then one retry; tokens can be rotated anytime. |
 | Open jobs (page size 30) | `GET /api/jobdiva/SearchJob?status=0&showAllOpenJobs=true&offset&maxReturned` |
 | Job detail | `GET /api/jobdiva/SearchJob?jobId=` (the returned ID must match exactly) |
-| Candidates on a job | `GET /api/jobdiva/searchSubmittal?jobid=`, `GET /api/jobdiva/searchStart?jobId&offset&maxreturned` |
-| Keyword search | `POST /api/jobdiva/us/universalSearchByPermission` |
-| Location search, contact details | `POST /api/jobdiva/searchCandidateProfile` |
-| Candidate lookup for the drawer | `GET /api/jobdiva/us/quickCandidateProfileSearch` (exact ID match) |
-| History | `GET /api/jobdiva/searchSubmittal?candidateid=`, `GET /api/jobdiva/searchStart?candidateid=` |
+| Candidates on a job | `GET /api/jobdiva/searchSubmittal?jobid&candidatelastname=a%` … `z%` (A–Z sweep, cached 2 min), plus `GET /api/jobdiva/searchStart?jobId&offset&maxreturned` |
+| **Candidate search (the only v2 call)** | `POST /apiv2/jobdiva/TalentSearch` with one skill (`skills`) or a title (`titleSearch`) per query, national, `resumeCount` 40 |
+| Candidate lookup for the drawer | `GET /api/jobdiva/us/quickCandidateProfileSearch?criteria=<id>` (exact ID match), then `POST /api/jobdiva/searchCandidateProfile` by name for contact details |
+| History | `GET /api/jobdiva/searchStart?candidateid=` (all jobs), plus submittals to the current job from the A–Z sweep |
 
+**What I verified live, and why the design looks like this:**
+- **v1 can't search candidates by skill or title.** `universalSearchByPermission` matches candidates by name only. Skill and title search therefore uses v2 `TalentSearch`, the only v2 call in the app.
+- **Searches run one skill at a time, nationally.**
+  - `TalentSearch` ANDs its skills, and multi-skill queries took 20–30 s for almost no results. Single-skill and title queries return in under 1 s.
+  - Each candidate collects every skill JobDiva matched them on. That match is evidence, which Claude treats as "mentioned" (partial unless confirmed elsewhere).
+  - The `states` filter took about 20 s per query and returned nothing for smaller states, so location is ranked locally instead.
+- **`searchSubmittal` needs both a candidate filter and a job filter.** `%` is not a wildcard, but `a%` is, so a job's submittals are listed with an A–Z last-name sweep. Cross-job history comes from `searchStart`.
+- **What a search actually returns.** `TalentSearch` returns only a short `ABSTRACT` (about 50 characters) and the `LASTNOTE`. Full resume text, notes and work history exist only under `/api/bi/*`, which this API user can't access. The UI marks them unavailable rather than missing. If BI access is granted, set `JOBDIVA_USE_BI=true`.
 - **429 responses.** The client honours `Retry-After` or backs off exponentially, up to 3 times. If the limit persists, the search ends with a `rate_limited` error and the UI shows a countdown and a **Retry search** button.
-- **Not available through `/api/jobdiva`.** Candidate notes, resume text and work history exist only under `/api/bi/*`. The UI says they are unavailable instead of treating them as missing. If BI access is granted later, set `JOBDIVA_USE_BI=true` to include them.
-- **First checks with real credentials.**
-  - Which field in search documents holds the candidate ID, title, skills and resume text? Adjust the key lists in [mappers.py](backend/app/clients/jobdiva/mappers.py) to match.
-  - Does `criteria` accept AND/OR and quoted phrases? If not, set `JOBDIVA_BOOLEAN_SEARCH=false`.
-  - Does `quickCandidateProfileSearch` match on candidate ID?
 
 ## Data handling
 
 - No database. Candidate data exists only in memory during a request, plus `backend/.cache/search_snapshot.json`. That file is overwritten on every search, is gitignored, and exists for debugging. `SNAPSHOT_REPLAY=true` re-runs ranking on it without calling JobDiva.
 - Browser `localStorage` keeps recent searches (query and filters only, no candidate data), stored per job.
 - Logs record IDs, counts and timings. Query strings, which carry JobDiva credentials, are redacted.
-- v1 runs locally. Put it behind company SSO before deploying it anywhere.
+- The deployed app sits behind HTTP basic auth (see Deploy). Replace it with company SSO before wider rollout.
+
+## Deploy (Render)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AnupNair23/candidate-tracker)
+
+One Docker web service (see [Dockerfile](Dockerfile) and [render.yaml](render.yaml)). FastAPI serves both the API and the built UI from the same origin.
+
+- **Secrets Render asks for:** `ANTHROPIC_API_KEY`, `JOBDIVA_CLIENT_ID`, `JOBDIVA_USERNAME`, `JOBDIVA_PASSWORD`, `BASIC_AUTH_USER`, `BASIC_AUTH_PASSWORD`. Nothing secret is baked into the image.
+- **Basic auth:** the whole app (UI, API and the search stream) sits behind HTTP basic auth. The browser prompts once and then reuses the credentials. Only `GET /healthz` (Render's health check, returns `{"ok": true}`) is open. If either auth variable is unset, auth is off and the server logs a warning.
+- **Free-tier cold start:** the service sleeps after 15 minutes idle, so the first request after that takes ~30–60 s.
+- **JobDiva IP allow-listing:** if JobDiva restricts API access by IP, allow-list the service's outbound IPs (Render dashboard → service → *Connect* → *Outbound*).
+- **Run the image locally** (mock data, no secrets):
+
+  ```bash
+  docker build -t candidate-tracker . && docker run -p 8000:8000 -e JOBDIVA_MOCK=true -e LLM_MODE=stub -e BASIC_AUTH_USER=demo -e BASIC_AUTH_PASSWORD=demo candidate-tracker
+  ```
+
+  Then open http://localhost:8000 and log in as `demo` / `demo`.

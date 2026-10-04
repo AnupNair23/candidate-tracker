@@ -146,6 +146,13 @@ def build_packet(
         if truncated:
             add("resume", "Search excerpt", "(search excerpt truncated for length)")
 
+    if rec.search_matches:
+        add(
+            "resume",
+            "JobDiva resume search",
+            "JobDiva's resume search matched this candidate on: " + ", ".join(rec.search_matches),
+        )
+
     for it in rec.interactions:
         meta = " | ".join(
             p

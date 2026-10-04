@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     jobdiva_max_retries: int = 3
     jobdiva_backoff_base_s: float = 2.0
     jobdiva_timeout_s: float = 60.0
-    jobdiva_boolean_search: bool = True
     jobdiva_jobs_cache_ttl_s: float = 60.0
     # Optional /api/bi/* calls (notes, resume text, work history). Off: only /api/jobdiva/* is used.
     jobdiva_use_bi: bool = False
@@ -54,7 +53,7 @@ class Settings(BaseSettings):
     assess_batch_size: int = 8
     assess_concurrency: int = 5
     shortlist_size: int = 30
-    search_deadline_s: float = 120.0
+    search_deadline_s: float = 180.0
     resume_char_cap: int = 16000
 
     # Snapshot (overwritten on every search)
@@ -62,6 +61,16 @@ class Settings(BaseSettings):
     snapshot_replay: bool = False
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Deploy. HTTP basic auth guards everything (except GET /healthz) when both are set; unset = open (local dev).
+    basic_auth_user: str | None = None
+    basic_auth_password: SecretStr | None = None
+    # Built frontend (Vite `dist/`) served by FastAPI with SPA fallback. Unset in local dev (Vite proxies /api).
+    frontend_dist: Path | None = None
+
+    @property
+    def basic_auth_enabled(self) -> bool:
+        return bool(self.basic_auth_user and self.basic_auth_password and self.basic_auth_password.get_secret_value())
 
     @property
     def jobdiva_configured(self) -> bool:

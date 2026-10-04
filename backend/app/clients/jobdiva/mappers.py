@@ -179,7 +179,9 @@ def map_candidate(
         "work_authorization": as_str(
             pick(row, "workauthorization", "visastatus", "citizenship", "workstatus", "legalstatus")
         ),
-        "updated_on": iso(pick(row, "dateupdated", "datelastupdated", "lastupdated", "datemodified", "datecreated")),
+        "updated_on": iso(
+            pick(row, "dateupdated", "datelastupdated", "lastupdated", "datemodified", "received", "datecreated")
+        ),
     }
     available = pick(row, "available", "availablenow")
     if available is not None:
@@ -201,7 +203,11 @@ def map_candidate(
         bits = [
             clean_text(v)
             for k, v in row.items()
-            if isinstance(v, str) and len(v) > SEARCH_TEXT_MIN_CHARS and k not in PII_KEYS and not k.endswith("id")
+            if isinstance(v, str)
+            and (len(v) > SEARCH_TEXT_MIN_CHARS or k == "abstract")
+            and k not in PII_KEYS
+            and k != "lastnote"  # mapped as an interaction instead (map_last_note)
+            and not k.endswith("id")
         ]
         rec.search_text = "\n\n".join(b for b in bits if b) or None
     return rec
@@ -390,3 +396,11 @@ def newest_resume_id(rows: list[dict]) -> dict[str, str]:
 def resume_text_of(row: dict | None) -> str | None:
     text = clean_text(pick(row, "plaintext", "resumetext", "text", "content"))
     return text or None
+
+
+def map_last_note(row: dict) -> Interaction | None:
+    """TalentSearch rows carry the candidate's most recent note as LASTNOTE."""
+    content = clean_text(pick(row, "lastnote"))
+    if not content:
+        return None
+    return Interaction(interaction_id=f"lastnote-{candidate_id_of(row)}", type="notes", content=content)

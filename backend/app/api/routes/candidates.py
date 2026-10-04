@@ -22,9 +22,11 @@ async def candidate_profile(
 
 
 @router.get("/candidates/{candidate_id}/interactions")
-async def candidate_interactions(candidate_id: str, request: Request) -> dict[str, Any]:
+async def candidate_interactions(
+    candidate_id: str, request: Request, job_id: str | None = Query(None, max_length=NAME_HINT_MAX_CHARS)
+) -> dict[str, Any]:
     d = get_deps(request)
-    return await candidate_service.interactions(d.jobdiva, d.settings, candidate_id)
+    return await candidate_service.interactions(d.jobdiva, d.settings, candidate_id, job_id)
 
 
 @router.get("/candidates/{candidate_id}/resume")

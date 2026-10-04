@@ -6,9 +6,12 @@ AUTHENTICATE_PATH = "/api/authenticate"
 SEARCH_JOB_PATH = "/api/jobdiva/SearchJob"
 SEARCH_SUBMITTAL_PATH = "/api/jobdiva/searchSubmittal"
 SEARCH_START_PATH = "/api/jobdiva/searchStart"
-UNIVERSAL_SEARCH_PATH = "/api/jobdiva/us/universalSearchByPermission"
 QUICK_CANDIDATE_SEARCH_PATH = "/api/jobdiva/us/quickCandidateProfileSearch"
 SEARCH_CANDIDATE_PROFILE_PATH = "/api/jobdiva/searchCandidateProfile"
+
+# The single approved v2 endpoint: v1 has no skill/title candidate search (v1 universal search matches names only).
+# Body fields: skills[] (ANDed), titleSearch, states[] (2-letter), resumeCount (caps the result; no paging).
+TALENT_SEARCH_PATH = "/apiv2/jobdiva/TalentSearch"
 
 # Optional BI endpoints (/api/bi/...) — only called when JOBDIVA_USE_BI=true.
 BI_CANDIDATE_NOTES_PATH = "/api/bi/CandidateNotesListDetail"
@@ -19,9 +22,10 @@ BI_CANDIDATE_EXPERIENCE_PATH = "/api/bi/CandidateExperienceDetail"
 # ----------------------------------------------------------- request parameters
 BATCH_SIZE = 50  # candidate ids per batched BI call
 OPEN_JOB_STATUS = 0  # SearchJob `status` value for open jobs
-# searchSubmittal rejects a job-only search ("please specify at least one candidate parameter"), so a
-# wildcard last name is sent alongside jobid.
-SUBMITTAL_CANDIDATE_WILDCARD = {"candidatelastname": "%"}
+# searchSubmittal needs a candidate parameter AND a job parameter (verified live). "%" is not a wildcard, but a
+# last-name prefix like "a%" is, so a job's submittals are listed by sweeping last-name prefixes a–z.
+SUBMITTAL_LASTNAME_PREFIXES = tuple("abcdefghijklmnopqrstuvwxyz")
+LINKED_CACHE_TTL_S = 120.0  # job submittal sweeps are cached briefly (Candidates tab + search share them)
 DEFAULT_MAX_RETURNED = 30  # default page size of the candidate search / starts helpers
 QUICK_SEARCH_MAX_RETURNED = 10  # default page size of quickCandidateProfileSearch
 

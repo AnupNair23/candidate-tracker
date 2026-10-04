@@ -98,6 +98,7 @@ export function JobPage() {
               <CandidateDrawer
                 key={`${jobId}:${candidateId}`}
                 candidateId={candidateId}
+                jobId={jobId}
                 nameHint={entry?.name ?? linked.data?.items.find((i) => i.candidate_id === candidateId)?.name}
                 entry={entry}
                 intent={run?.result?.intent ?? null}

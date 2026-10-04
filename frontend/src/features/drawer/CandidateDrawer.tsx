@@ -257,7 +257,7 @@ export function CandidateDrawer({ candidateId, jobId, nameHint, entry, intent, o
             <div key={i} className="timeline-item">
               <span className="tdot" />
               <div>
-                <div className="row between"><strong className="small">{w.title ?? 'Role'}</strong><span className="faint small">{[w.start, w.end ?? 'now'].filter(Boolean).join(' – ')}</span></div>
+                <div className="row between"><strong className="small">{w.title ?? 'Role'}</strong><span className="faint small">{w.period ?? [w.start, w.end ?? 'now'].filter(Boolean).join(' – ')}</span></div>
                 <div className="small muted">{[w.company, w.location].filter(Boolean).join(' · ')}</div>
                 {w.description && <div className="prose small">{w.description}</div>}
               </div>

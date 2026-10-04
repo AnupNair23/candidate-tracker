@@ -8,12 +8,12 @@ from typing import Any
 from app.clients.jobdiva.client import JobDivaClient
 from app.clients.jobdiva.errors import FATAL_ERRORS, JobDivaError, JobDivaNotFound
 from app.clients.jobdiva.mappers import (
+    apply_work_history,
     as_str,
     candidate_id_of,
     dedupe_interactions,
     iso,
     map_candidate,
-    map_experience,
     map_note,
     map_submittal,
     newest_resume_id,
@@ -77,6 +77,16 @@ async def profile(
     name) and accept only an exact candidate-id match; then fetch contact + qualifications by name."""
     rec = CandidateRecord(candidate_id=candidate_id)
     found = False
+    if settings.jobdiva_use_bi:  # direct lookup by id (BI is the only JobDiva endpoint that offers one)
+        try:
+            row = await client.bi_candidate_detail(candidate_id)
+        except FATAL_ERRORS:
+            raise
+        except JobDivaError:
+            row = None
+        if row and candidate_id_of(row) == candidate_id:
+            map_candidate(row, rec)
+            found = True
     for criteria in (candidate_id, name_hint):
         if not criteria or found:
             continue
@@ -115,7 +125,8 @@ async def profile(
     history_state = "unavailable"
     if settings.jobdiva_use_bi:
         try:
-            work_history = [map_experience(r).model_dump() for r in await client.bi_candidate_experience(candidate_id)]
+            apply_work_history(rec, await client.bi_candidate_experience(candidate_id))
+            work_history = [w.model_dump() for w in rec.work_history]
             history_state = "ok" if work_history else "none"
         except FATAL_ERRORS:
             raise

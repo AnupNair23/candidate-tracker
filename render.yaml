@@ -31,4 +31,6 @@ services:
       - key: JOBDIVA_MOCK
         value: "false"
       - key: JOBDIVA_USE_BI
-        value: "false"
+        value: "true"
+      - key: SEARCH_DEADLINE_S
+        value: "180"

@@ -180,7 +180,16 @@ def map_candidate(
             pick(row, "workauthorization", "visastatus", "citizenship", "workstatus", "legalstatus")
         ),
         "updated_on": iso(
-            pick(row, "dateupdated", "datelastupdated", "lastupdated", "datemodified", "received", "datecreated")
+            pick(
+                row,
+                "dateprofileupdated",
+                "dateupdated",
+                "datelastupdated",
+                "lastupdated",
+                "datemodified",
+                "received",
+                "datecreated",
+            )
         ),
     }
     available = pick(row, "available", "availablenow")
@@ -368,15 +377,32 @@ def dedupe_interactions(items: list[Interaction]) -> list[Interaction]:
 
 
 def map_experience(row: dict) -> WorkHistoryItem:
+    """BI experience rows: {details: "Title | Company", date: "MM/YYYY - MM/YYYY"}; other shapes field by field."""
+    details = as_str(pick(row, "details"))
+    title = as_str(pick(row, "title", "jobtitle", "position"))
+    company = as_str(pick(row, "company", "companyname", "employer"))
+    if details and not (title or company):
+        head, _, tail = details.partition("|")
+        title, company = head.strip() or None, tail.strip() or None
     city, state = as_str(pick(row, "city")), as_str(pick(row, "state"))
     return WorkHistoryItem(
-        title=as_str(pick(row, "title", "jobtitle", "position")),
-        company=as_str(pick(row, "company", "companyname", "employer")),
+        title=title,
+        period=as_str(pick(row, "date", "dates", "period")),
+        company=company,
         location=", ".join(p for p in (city, state) if p) or None,
         start=iso(pick(row, "startdate", "fromdate", "datefrom")),
         end=iso(pick(row, "enddate", "todate", "dateto")),
         description=clean_text(pick(row, "description", "duties", "responsibilities")) or None,
     )
+
+
+def apply_work_history(rec: CandidateRecord, rows: list[dict]) -> None:
+    """Attach work history (most recent first, as JobDiva returns it) and fill a missing title/employer from it."""
+    rec.work_history = [w for w in (map_experience(r) for r in rows) if w.title or w.company]
+    if rec.work_history:
+        latest = rec.work_history[0]
+        rec.title = rec.title or latest.title
+        rec.employer = rec.employer or latest.company
 
 
 def newest_resume_id(rows: list[dict]) -> dict[str, str]:

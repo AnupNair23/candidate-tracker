@@ -6,7 +6,7 @@ Anup Nair, Product Owner · 4 October 2026
 
 Candidate Tracker (internal codename Ascendia) gives a recruiter a ranked shortlist of up to 30 candidates for an open JobDiva job, with a plain reason for every pick. It reads jobs and candidates from JobDiva, uses Claude (Anthropic's model) to understand the request and assess candidates, and checks every AI claim against real evidence before showing it.
 
-This is an MVP. On a realistic test dataset it reviewed 44 profiles in about 60 seconds and returned a 30-candidate shortlist. Live JobDiva access works, but ranking depth on live data is limited until our API user can read full resumes, notes and work history.
+This is an MVP. On live JobDiva data, a search for an open role found 184 candidates, reviewed the top 41 in depth (all 41 with resume text, 40 with work history) and returned a 30-candidate shortlist in about two minutes.
 
 ## The problem
 
@@ -87,7 +87,7 @@ Testing against the live API changed the design in four places, and these findin
 
 - **v1 keyword search matches names only.** It does not search skills, so we added one v2 call, TalentSearch, for skill and title search.
 - **Submittal search needs two filters.** searchSubmittal needs both a candidate filter and a job filter, and only last-name prefixes work as wildcards. To list a job's submittals, we sweep last names from A to Z.
-- **Full resumes sit behind BI access.** Resume text, full notes and work history are only available through JobDiva's BI endpoints, which our API user can't access. TalentSearch returns only a short abstract and the last note.
+- **Candidate detail lives in JobDiva's BI endpoints.** Resume text, notes, work history and profile details only come from the BI endpoints. They work for our account and return data in batches, and v1 returns them in a table format we had to decode. Each candidate's job title comes from their latest work-history entry.
 - **The state filter doesn't help.** TalentSearch's state filter was slow (about 20 seconds per query) and too restrictive. We search nationally and rank location ourselves.
 
 ## Results so far
@@ -107,9 +107,9 @@ These are test-data results, not hiring outcomes. We have not yet measured short
 
 ## Limitations
 
-The main limit today is evidence depth. On live data, the model sees a short abstract and the last note, not the full resume, so it can only confirm what that short text mentions.
+On live data, the model now sees each reviewed candidate's resume text, work history, notes and placement outcomes. The main limits today are speed (about two minutes per search) and that ranking weights have not yet been tuned against recruiter judgement.
 
-- **Shallow live evidence.** No full resumes, full notes or work history until BI access is enabled.
+- **Untuned ranking.** Weights and prompts have not yet been checked against recruiter-labelled examples.
 - **Not yet measured with recruiters.** Results come from a test dataset. We don't have a labelled set of real jobs yet.
 - **Read-only.** Recruiters can't add notes, submit candidates or record dismiss reasons from the app yet.
 - **Speed and cost.** About 1–2 minutes and $1 per search. That is fine for a pilot, but worth bringing down.
@@ -118,11 +118,11 @@ The main limit today is evidence depth. On live data, the model sees a short abs
 
 ## Next steps
 
-Our first priority is JobDiva BI access: it is the smallest change with the biggest effect on ranking quality. The rest follow in order.
+Our first priority is a recruiter-labelled evaluation set, so we can tune ranking against real judgement. The rest follow in order.
 
 | # | Next step | Impact | Effort |
 | --- | --- | --- | --- |
-| 1 | **Enable JobDiva BI access** for our API user, to get full resume text, notes and work history. This is mostly a JobDiva permission; the code already has a switch for it. | High | Low |
+| 1 | **Add more JobDiva detail**, such as certifications, licences and preferred locations. The BI endpoints for these already exist and work for our account. | Medium | Low |
 | 2 | **Write back to JobDiva:** add notes, "Add to job" (submittal) and dismiss reasons, each with a confirmation. All are read-only on purpose in v1. | High | Medium |
 | 3 | **Recruiter-labelled evaluation set** of 3–5 real jobs, to tune weights and prompts and to measure precision of the top 30. | High | Medium |
 | 4 | **SSO** in place of the shared password, plus audit logging. Needed before a wider rollout. | Medium | Medium |

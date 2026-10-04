@@ -16,6 +16,7 @@ export type Interaction = z.infer<typeof InteractionSchema>
 
 export const WorkHistorySchema = z.object({
   title: optStr,
+  period: optStr,
   company: optStr,
   location: optStr,
   start: optStr,

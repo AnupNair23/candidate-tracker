@@ -29,6 +29,7 @@ MAX_TITLE_QUERIES = 2  # distinct titles searched with titleSearch
 TALENT_RESUME_COUNT_BROAD = 40  # resumeCount per TalentSearch query
 
 # ------------------------------------------------------------------ hydration
+MAX_WORK_HISTORY_ITEMS = 6  # most recent work-history entries sent to Claude as evidence
 MAX_INTERACTIONS = 25  # newest interactions kept per candidate (same-client ones beyond this are also kept)
 HYDRATE_PROGRESS_EVERY = 5  # emit a hydrate progress event every N candidates
 # searchStart rows are numbered from this offset so their synthetic interaction ids never collide with

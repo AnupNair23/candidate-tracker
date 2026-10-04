@@ -274,6 +274,7 @@ def build_dataset(seed: int = 7, n_jobs: int = 45, n_candidates: int = 160) -> D
             "dateUpdated": f"202{4 + c % 3}-0{1 + c % 9}-15",
             "_employer": employer,
             "_lastNote": rng.choice(NOTES),
+            "_prevEmployer": rng.choice(fam["employers"]),
         }
         if c % 9:
             cand["yearsOfExperience"] = years
@@ -367,7 +368,8 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        q = {k: v[-1] for k, v in parse_qs(request.url.query.decode()).items()}
+        q_all = parse_qs(request.url.query.decode())
+        q = {k: v[-1] for k, v in q_all.items()}
         self.calls.append(path)
 
         if path == "/api/authenticate":
@@ -505,4 +507,112 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
                 for c in rows[offset : offset + size]
             ]
             return self._json(out)
+        if path.startswith(("/api/bi/", "/apiv2/bi/")):
+            return self._bi(path, q, q_all)
+        return self._json({"message": f"No mock for {path}"}, 404)
+
+    # ------------------------------------------------------------------ BI (verified live formats, 2026-10-04)
+
+    def _table(self, rows: list[dict]) -> httpx.Response:
+        """v1 BI shape: {"message", "data": [[columns], [values], ...]}; no rows → "data": {}."""
+        if not rows:
+            return self._json({"message": "Query completed successfully", "data": {}})
+        cols = list(rows[0])
+        return self._json(
+            {"message": "Query completed successfully", "data": [cols, *[[r.get(c) for c in cols] for r in rows]]}
+        )
+
+    def _objects(self, rows: list[dict]) -> httpx.Response:
+        """v2 BI shape: {"message", "data": [{...}, ...]}; no rows → "data": {}."""
+        return self._json({"message": "Query completed successfully", "data": rows or {}})
+
+    def _bi(self, path: str, q: dict, q_all: dict) -> httpx.Response:
+        by_id = {str(c["candidateId"]): c for c in self.ds.candidates}
+        ids = [i for i in q_all.get("candidateIds", []) if i in by_id]
+        one = by_id.get(q.get("candidateId") or q.get("employeeId") or "")
+
+        def profile(c: dict) -> dict:
+            return {
+                "ID": c["candidateId"],
+                "FIRSTNAME": c["firstName"],
+                "LASTNAME": c["lastName"],
+                "CITY": c["city"],
+                "STATE": c["state"],
+                "COUNTRY": "US",
+                "CELLPHONE": c["phone"],
+                "EMAIL": c["email"],
+                "DATECREATED": "2022-01-10T09:00:00",
+                "DATEUPDATED": f"{c['dateUpdated']}T09:00:00",
+                "DATEPROFILEUPDATED": f"{c['dateUpdated']}T09:00:00",
+                "RESUMECOUNT": 1,
+            }
+
+        def experience(c: dict) -> list[dict]:
+            return [
+                {"DATE": "01/2022 - 10/2026", "DETAILS": f"{c['title']} | {c['_employer']}", "DBID": 1},
+                {"DATE": "06/2016 - 12/2021", "DETAILS": f"Engineer | {c['_prevEmployer']}", "DBID": 1},
+            ]
+
+        if path in ("/api/bi/CandidatesDetail", "/apiv2/bi/CandidatesDetail"):
+            return self._table([profile(by_id[i]) for i in ids])
+        if path == "/api/bi/CandidateDetail":
+            return self._table([profile(one)] if one else [])
+        if path == "/api/bi/CandidatesResumesDetail":
+            rows = [
+                {
+                    "CANDIDATEID": by_id[i]["candidateId"],
+                    "RESUMEID": f"9{by_id[i]['candidateId']}",
+                    "DATECREATED": "2025-03-01T09:00:00",
+                }
+                for i in ids
+            ]
+            return self._table(rows)
+        if path == "/api/bi/CandidateResumesDetail":
+            return self._table(
+                [
+                    {
+                        "CANDIDATEID": one["candidateId"],
+                        "RESUMEID": f"9{one['candidateId']}",
+                        "DATECREATED": "2025-03-01T09:00:00",
+                    }
+                ]
+                if one
+                else []
+            )
+        resume_ids = q_all.get("resumeIds", []) + ([q["resumeId"]] if q.get("resumeId") else [])
+        by_resume = {f"9{c['candidateId']}": c for c in self.ds.candidates}
+        if path == "/apiv2/bi/ResumesTextDetail":
+            return self._objects(
+                [{"GLOBAL_ID": r, "PLAINTEXT": by_resume[r]["resumeText"]} for r in resume_ids if r in by_resume]
+            )
+        if path == "/api/bi/ResumeDetail":
+            c = by_resume.get(q.get("resumeId", ""))
+            return self._table([{"FILENAME": "resume.docx", "PLAINTEXT": c["resumeText"]}] if c else [])
+        if path == "/apiv2/bi/CandidateNotesListDetail":
+            rows = [
+                {
+                    "NOTEID": f"n{by_id[i]['candidateId']}",
+                    "CANDIDATEID": by_id[i]["candidateId"],
+                    "NOTE": by_id[i]["_lastNote"],
+                    "ACTIONTYPE": "Phone call",
+                    "DATECREATED": "2026-08-12T10:00:00",
+                    "RECRUITERNAME": "Jenna O.",
+                }
+                for i in ids
+                if int(i) % 3 == 0
+            ]
+            return self._objects(rows)
+        if path == "/apiv2/bi/CandidatesProfileDetail":
+            return self._objects(
+                [{**profile(by_id[i]), "EXPERIENCE": experience(by_id[i]), "EDUCATION": []} for i in ids]
+            )
+        if path == "/api/bi/CandidateExperienceDetail":
+            return self._table(
+                [
+                    {"CANDIDATEID": one["candidateId"], **{k: v for k, v in e.items() if k != "DBID"}}
+                    for e in experience(one)
+                ]
+                if one
+                else []
+            )
         return self._json({"message": f"No mock for {path}"}, 404)

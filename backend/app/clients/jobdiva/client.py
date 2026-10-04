@@ -36,10 +36,15 @@ from app.constants.jobdiva import (
     AUTHENTICATE_PATH,
     BACKOFF_JITTER_S,
     BATCH_SIZE,
+    BI_CANDIDATE_DETAIL_PATH,
     BI_CANDIDATE_EXPERIENCE_PATH,
     BI_CANDIDATE_NOTES_PATH,
+    BI_CANDIDATES_DETAIL_PATH,
     BI_CANDIDATES_RESUMES_PATH,
     BI_RESUME_DETAIL_PATH,
+    BI_V2_CANDIDATES_NOTES_PATH,
+    BI_V2_CANDIDATES_PROFILE_PATH,
+    BI_V2_RESUMES_TEXT_PATH,
     CREDENTIALS_REJECTED_MARKERS,
     DEFAULT_MAX_RETURNED,
     ERROR_MESSAGE_CHARS,
@@ -72,6 +77,20 @@ def normalize(obj: Any) -> Any:
     if isinstance(obj, list):
         return [normalize(v) for v in obj]
     return obj
+
+
+def detabulate(payload: Any) -> Any:
+    """v1 BI responses are tables: {"message", "data": [[column, ...], [value, ...], ...]}. Turn the rows into
+    objects (v2 BI already returns objects). An empty BI result arrives as `"data": {}`."""
+    if not isinstance(payload, dict) or "data" not in payload:
+        return payload
+    data = payload["data"]
+    if isinstance(data, dict) and not data:
+        return {**payload, "data": []}
+    if isinstance(data, list) and data and isinstance(data[0], list) and all(isinstance(c, str) for c in data[0]):
+        header = data[0]
+        return {**payload, "data": [dict(zip(header, row, strict=False)) for row in data[1:] if isinstance(row, list)]}
+    return payload
 
 
 def unwrap(payload: Any) -> Any:
@@ -326,7 +345,7 @@ class JobDivaClient:
             payload = resp.json()
         except ValueError:
             return resp.text
-        return unwrap(normalize(payload))
+        return unwrap(normalize(detabulate(payload)))
 
     # ------------------------------------------------------------- endpoints
     # Standard v1 endpoints (/api/jobdiva/...); paths live in app.constants.jobdiva. Parameter casing is exactly as
@@ -461,6 +480,30 @@ class JobDivaClient:
     async def bi_resume_detail(self, resume_id: str, budget: CallBudget | None = None) -> dict | None:
         rows = as_list(await self.request("GET", BI_RESUME_DETAIL_PATH, params={"resumeId": resume_id}, budget=budget))
         return rows[0] if rows else None
+
+    async def _bi_batch(self, path: str, param: str, ids: Sequence[str], budget: CallBudget | None) -> list[dict]:
+        rows: list[dict] = []
+        for chunk in chunks(list(ids)):
+            rows.extend(as_list(await self.request("GET", path, params={param: chunk}, budget=budget)))
+        return rows
+
+    async def bi_candidate_detail(self, candidate_id: str) -> dict | None:
+        rows = as_list(await self.request("GET", BI_CANDIDATE_DETAIL_PATH, params={"candidateId": candidate_id}))
+        return rows[0] if rows else None
+
+    async def bi_candidates_detail(self, ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
+        return await self._bi_batch(BI_CANDIDATES_DETAIL_PATH, "candidateIds", ids, budget)
+
+    async def bi_resume_texts(self, resume_ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
+        """Rows of {globalid (= resume id), plaintext}."""
+        return await self._bi_batch(BI_V2_RESUMES_TEXT_PATH, "resumeIds", resume_ids, budget)
+
+    async def bi_candidates_notes(self, ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
+        return await self._bi_batch(BI_V2_CANDIDATES_NOTES_PATH, "candidateIds", ids, budget)
+
+    async def bi_candidates_profiles(self, ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
+        """Profile rows with an `experience` list of {date: "MM/YYYY - MM/YYYY", details: "Title | Company"}."""
+        return await self._bi_batch(BI_V2_CANDIDATES_PROFILE_PATH, "candidateIds", ids, budget)
 
     async def bi_candidate_experience(self, candidate_id: str) -> list[dict]:
         return as_list(await self.request("GET", BI_CANDIDATE_EXPERIENCE_PATH, params={"employeeId": candidate_id}))

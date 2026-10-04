@@ -131,7 +131,13 @@ frontend/src/
   - Each candidate collects every skill JobDiva matched them on. That match is evidence, which Claude treats as "mentioned" (partial unless confirmed elsewhere).
   - The `states` filter took about 20 s per query and returned nothing for smaller states, so location is ranked locally instead.
 - **`searchSubmittal` needs both a candidate filter and a job filter.** `%` is not a wildcard, but `a%` is, so a job's submittals are listed with an A–Z last-name sweep. Cross-job history comes from `searchStart`.
-- **What a search actually returns.** `TalentSearch` returns only a short `ABSTRACT` (about 50 characters) and the `LASTNOTE`. Full resume text, notes and work history exist only under `/api/bi/*`, which this API user can't access. The UI marks them unavailable rather than missing. If BI access is granted, set `JOBDIVA_USE_BI=true`.
+- **Candidate detail comes from BI, which works on this account.**
+  - Profiles: `/api/bi/CandidatesDetail` (batch).
+  - Resume text: `/api/bi/CandidatesResumesDetail` → `/apiv2/bi/ResumesTextDetail` (batch).
+  - Notes: `/apiv2/bi/CandidateNotesListDetail` (batch).
+  - Work history: `/apiv2/bi/CandidatesProfileDetail` (batch; `EXPERIENCE` = "Title | Company", "MM/YYYY - MM/YYYY"). Each candidate's title and employer come from their latest entry.
+  - v1 BI responses are tables (`data: [[columns], [values]…]`); v2 BI responses are objects. Both are decoded in `clients/jobdiva/client.py`.
+  - `JOBDIVA_USE_BI=true` is the default. Live check: 41 of 41 reviewed candidates had resume text, at about 1,600 characters each.
 - **429 responses.** The client honours `Retry-After` or backs off exponentially, up to 3 times. If the limit persists, the search ends with a `rate_limited` error and the UI shows a countdown and a **Retry search** button.
 
 ## Data handling

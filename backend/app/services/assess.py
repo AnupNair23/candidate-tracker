@@ -30,7 +30,7 @@ from app.constants.assessment import (
 )
 from app.constants.llm import ASSESS_MAX_TOKENS, STUB_CONTRIBUTION_EVIDENCE, STUB_MODEL, STUB_VERDICT_EVIDENCE
 from app.constants.pii import AUTH_HINTS
-from app.constants.search import STAGE_ASSESS
+from app.constants.search import MAX_WORK_HISTORY_ITEMS, STAGE_ASSESS
 from app.core.config import Settings
 from app.models.assessment import INTERACTION_SOURCES, AssessmentOut, BatchOut, ContributionOut, VerdictOut
 from app.models.intent import Requirement, SearchIntent
@@ -145,6 +145,13 @@ def build_packet(
             add("resume", "Search excerpt", p)
         if truncated:
             add("resume", "Search excerpt", "(search excerpt truncated for length)")
+
+    if rec.work_history:
+        lines = [
+            " | ".join(p for p in (w.period, w.title, w.company) if p)
+            for w in rec.work_history[:MAX_WORK_HISTORY_ITEMS]
+        ]
+        add("profile", "Work history", "Work history (most recent first):\n" + "\n".join(lines))
 
     if rec.search_matches:
         add(

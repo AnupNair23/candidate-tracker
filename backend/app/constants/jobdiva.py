@@ -13,7 +13,14 @@ SEARCH_CANDIDATE_PROFILE_PATH = "/api/jobdiva/searchCandidateProfile"
 # Body fields: skills[] (ANDed), titleSearch, states[] (2-letter), resumeCount (caps the result; no paging).
 TALENT_SEARCH_PATH = "/apiv2/jobdiva/TalentSearch"
 
-# Optional BI endpoints (/api/bi/...) — only called when JOBDIVA_USE_BI=true.
+# BI endpoints — verified live (2026-10-04): this account can read them. They are the only source of candidate
+# profile details, resume text, notes and work history. Used when JOBDIVA_USE_BI=true (the default).
+# v1 BI responses are tables ({"data": [[column names], [values], ...]}); v2 BI responses are lists of objects.
+BI_CANDIDATE_DETAIL_PATH = "/api/bi/CandidateDetail"
+BI_CANDIDATES_DETAIL_PATH = "/api/bi/CandidatesDetail"
+BI_V2_RESUMES_TEXT_PATH = "/apiv2/bi/ResumesTextDetail"
+BI_V2_CANDIDATES_NOTES_PATH = "/apiv2/bi/CandidateNotesListDetail"
+BI_V2_CANDIDATES_PROFILE_PATH = "/apiv2/bi/CandidatesProfileDetail"
 BI_CANDIDATE_NOTES_PATH = "/api/bi/CandidateNotesListDetail"
 BI_CANDIDATES_RESUMES_PATH = "/api/bi/CandidatesResumesDetail"
 BI_RESUME_DETAIL_PATH = "/api/bi/ResumeDetail"

@@ -25,7 +25,7 @@ from app.models.jobdiva import CandidateRecord, Job
 from app.models.pipeline import Deps, Emit, Pool
 from app.models.results import Funnel, QueryStat, RequirementFailure, SearchResult
 from app.services.assess import assess_all, assessment_requirements, build_job_block, build_packet
-from app.services.hydrate import enrich_stage2
+from app.services.hydrate import enrich_profiles, enrich_stage2
 from app.services.intent import normalize_intent
 from app.services.prescore import prescore, prescore_pool, select_for_review
 from app.services.retrieval import retrieve
@@ -72,6 +72,7 @@ async def run_search(
         await emit("stage", {"stage": STAGE_RETRIEVE, "message": "Searching JobDiva"})
         pool = await retrieve(deps.jobdiva, intent, job, s, budget, emit)
         await emit("stage", {"stage": STAGE_PRESCREEN, "message": f"Pre-screening {len(pool.records)} candidates"})
+        await enrich_profiles(deps.jobdiva, pool, budget, s)
 
     scores = await prescore_pool(pool, intent, job)
     selected, prescreened_out, excluded = select_for_review(pool, scores, s.stage2_top_n)

@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     jobdiva_backoff_base_s: float = 2.0
     jobdiva_timeout_s: float = 60.0
     jobdiva_jobs_cache_ttl_s: float = 60.0
-    # Optional /api/bi/* calls (notes, resume text, work history). Off: only /api/jobdiva/* is used.
-    jobdiva_use_bi: bool = False
+    # BI calls (/api/bi, /apiv2/bi): profile details, resume text, notes, work history. Verified working on this
+    # account; without them candidates have no title, resume or history.
+    jobdiva_use_bi: bool = True
     # JOBDIVA_MOCK=true serves a synthetic dataset through an in-process transport (dev/tests only).
     jobdiva_mock: bool = False
 

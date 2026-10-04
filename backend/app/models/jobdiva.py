@@ -57,6 +57,7 @@ class CandidateRecord(BaseModel):
     search_text: str | None = None  # text returned by candidate search (TalentSearch ABSTRACT), if any
     search_matches: list[str] = Field(default_factory=list)  # skills/titles JobDiva's resume search matched
     resume_text: str | None = None
+    work_history: list[WorkHistoryItem] = Field(default_factory=list)
     interactions: list[Interaction] = Field(default_factory=list)
     source_status: dict[str, Literal["ok", "none", "unavailable", "not_fetched"]] = Field(default_factory=dict)
     job_linked: bool = False
@@ -93,6 +94,7 @@ class Interaction(BaseModel):
 
 class WorkHistoryItem(BaseModel):
     title: str | None = None
+    period: str | None = None  # e.g. "01/2019 - 03/2021" as JobDiva reports it
     company: str | None = None
     location: str | None = None
     start: str | None = None

@@ -15,6 +15,7 @@ from app.clients.jobdiva.client import CallBudget, JobDivaClient
 from app.clients.jobdiva.errors import FATAL_ERRORS, CallBudgetExhausted, JobDivaError
 from app.clients.jobdiva.mappers import as_str, candidate_id_of, map_candidate, map_last_note, map_submittal, pick
 from app.constants.search import (
+    LINKED_APPLICANT_STATUS,
     LINKED_QUERY_LABEL,
     LINKED_START_STATUS,
     LINKED_STARTS_PAGES,
@@ -85,7 +86,7 @@ async def retrieve(
     page_size = settings.jobdiva_page_size
     target = settings.pool_target
 
-    linked = QueryStat(label=LINKED_QUERY_LABEL, criteria=f"submittals + starts for job {job.job_id}")
+    linked = QueryStat(label=LINKED_QUERY_LABEL, criteria=f"submittals + applicants + starts for job {job.job_id}")
 
     def add_linked(rows: list[dict], default_status: str) -> None:
         linked.returned += len(rows)
@@ -95,8 +96,8 @@ async def retrieve(
             if rec is None:
                 continue
             rec.job_linked = True
-            if default_status == LINKED_SUBMITTAL_STATUS:  # sweep rows are this job's submittal history
-                rec.interactions.extend(map_submittal(row, len(rec.interactions)))
+            if default_status == LINKED_SUBMITTAL_STATUS:  # this job's submittal history
+                rec.interactions.extend(map_submittal({**row, "jobid": job.job_id}, len(rec.interactions)))
             rec.job_link_status = (
                 rec.job_link_status or as_str(pick(row, "submittalstatus", "startstatus", "status")) or default_status
             )
@@ -111,6 +112,15 @@ async def retrieve(
         raise
     except JobDivaError as exc:
         errors.append(f"submittals: {exc.message}")
+    if client.use_bi:
+        try:
+            add_linked(await client.bi_job_applicants(job.job_id, budget=budget), LINKED_APPLICANT_STATUS)
+        except CallBudgetExhausted:
+            pool.partial = True
+        except FATAL_ERRORS:
+            raise
+        except JobDivaError as exc:
+            errors.append(f"applicants: {exc.message}")
     try:
         for page in range(LINKED_STARTS_PAGES):
             rows = await client.job_starts(job.job_id, offset=page * page_size, max_returned=page_size, budget=budget)

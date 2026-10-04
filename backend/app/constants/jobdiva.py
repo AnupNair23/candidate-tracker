@@ -21,6 +21,10 @@ BI_CANDIDATES_DETAIL_PATH = "/api/bi/CandidatesDetail"
 BI_V2_RESUMES_TEXT_PATH = "/apiv2/bi/ResumesTextDetail"
 BI_V2_CANDIDATES_NOTES_PATH = "/apiv2/bi/CandidateNotesListDetail"
 BI_V2_CANDIDATES_PROFILE_PATH = "/apiv2/bi/CandidatesProfileDetail"
+BI_JOB_SUBMITTALS_PATH = "/api/bi/JobSubmittalsDetail"
+BI_JOB_APPLICANTS_PATH = "/api/bi/JobApplicantsDetail"
+BI_CANDIDATE_SUBMITTALS_PATH = "/api/bi/CandidateSubmittalsDetail"
+BI_V2_CANDIDATES_SUBMITTALS_PATH = "/apiv2/bi/CandidatesSubmittalsDetail"
 BI_CANDIDATE_NOTES_PATH = "/api/bi/CandidateNotesListDetail"
 BI_CANDIDATES_RESUMES_PATH = "/api/bi/CandidatesResumesDetail"
 BI_RESUME_DETAIL_PATH = "/api/bi/ResumeDetail"
@@ -29,8 +33,9 @@ BI_CANDIDATE_EXPERIENCE_PATH = "/api/bi/CandidateExperienceDetail"
 # ----------------------------------------------------------- request parameters
 BATCH_SIZE = 50  # candidate ids per batched BI call
 OPEN_JOB_STATUS = 0  # SearchJob `status` value for open jobs
-# searchSubmittal needs a candidate parameter AND a job parameter (verified live). "%" is not a wildcard, but a
-# last-name prefix like "a%" is, so a job's submittals are listed by sweeping last-name prefixes a–z.
+# Fallback when BI is off. searchSubmittal needs a candidate parameter AND a job parameter (verified live); "%" is not
+# a wildcard but a last-name prefix like "a%" is. BEWARE: with a name wildcard JobDiva ignores `jobid` and returns
+# matches from any job, so sweep rows are filtered by job id. With BI on, BI JobSubmittalsDetail is used instead.
 SUBMITTAL_LASTNAME_PREFIXES = tuple("abcdefghijklmnopqrstuvwxyz")
 LINKED_CACHE_TTL_S = 120.0  # job submittal sweeps are cached briefly (Candidates tab + search share them)
 DEFAULT_MAX_RETURNED = 30  # default page size of the candidate search / starts helpers

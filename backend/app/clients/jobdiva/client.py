@@ -39,11 +39,15 @@ from app.constants.jobdiva import (
     BI_CANDIDATE_DETAIL_PATH,
     BI_CANDIDATE_EXPERIENCE_PATH,
     BI_CANDIDATE_NOTES_PATH,
+    BI_CANDIDATE_SUBMITTALS_PATH,
     BI_CANDIDATES_DETAIL_PATH,
     BI_CANDIDATES_RESUMES_PATH,
+    BI_JOB_APPLICANTS_PATH,
+    BI_JOB_SUBMITTALS_PATH,
     BI_RESUME_DETAIL_PATH,
     BI_V2_CANDIDATES_NOTES_PATH,
     BI_V2_CANDIDATES_PROFILE_PATH,
+    BI_V2_CANDIDATES_SUBMITTALS_PATH,
     BI_V2_RESUMES_TEXT_PATH,
     CREDENTIALS_REJECTED_MARKERS,
     DEFAULT_MAX_RETURNED,
@@ -166,6 +170,10 @@ class JobDivaClient:
         self.auth_calls = 0
         self._submittal_cache: dict[str, tuple[float, list[dict]]] = {}
         self.sleep = asyncio.sleep  # injectable for tests
+
+    @property
+    def use_bi(self) -> bool:
+        return self._s.jobdiva_use_bi
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -361,10 +369,15 @@ class JobDivaClient:
         return next((r for r in rows if str(r.get("id") or r.get("jobid")) == str(job_id)), None)
 
     async def job_submittals(self, job_id: str, budget: CallBudget | None = None) -> list[dict]:
-        """All submittals for a job via a last-name prefix sweep (a%…z%); see SUBMITTAL_LASTNAME_PREFIXES."""
+        """All submittals for a job: BI JobSubmittalsDetail when BI is on, else a last-name prefix sweep (a%…z%)
+        filtered to this job (JobDiva ignores `jobid` when a name wildcard is sent)."""
         cached = self._submittal_cache.get(job_id)
         if cached and time.monotonic() - cached[0] < LINKED_CACHE_TTL_S:
             return cached[1]
+        if self._s.jobdiva_use_bi:
+            rows = as_list(await self.request("GET", BI_JOB_SUBMITTALS_PATH, params={"jobId": job_id}, budget=budget))
+            self._submittal_cache[job_id] = (time.monotonic(), rows)
+            return rows
         pages = await asyncio.gather(
             *(
                 self.request(
@@ -379,6 +392,8 @@ class JobDivaClient:
         rows: list[dict] = []
         seen: set = set()
         for row in (r for page in pages for r in as_list(page)):
+            if str(row.get("jobidinjd") or row.get("jobid") or "") != str(job_id):
+                continue  # JobDiva ignored the job filter for this row
             key = row.get("submittalid") or (row.get("candidateidinjd"), row.get("submittaldate"))
             if key not in seen:
                 seen.add(key)
@@ -504,6 +519,16 @@ class JobDivaClient:
     async def bi_candidates_profiles(self, ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
         """Profile rows with an `experience` list of {date: "MM/YYYY - MM/YYYY", details: "Title | Company"}."""
         return await self._bi_batch(BI_V2_CANDIDATES_PROFILE_PATH, "candidateIds", ids, budget)
+
+    async def bi_job_applicants(self, job_id: str, budget: CallBudget | None = None) -> list[dict]:
+        return as_list(await self.request("GET", BI_JOB_APPLICANTS_PATH, params={"jobId": job_id}, budget=budget))
+
+    async def bi_candidate_submittals(self, candidate_id: str) -> list[dict]:
+        """A candidate's submittals across all jobs (with reject/interview/hire flags)."""
+        return as_list(await self.request("GET", BI_CANDIDATE_SUBMITTALS_PATH, params={"candidateid": candidate_id}))
+
+    async def bi_candidates_submittals(self, ids: Sequence[str], budget: CallBudget | None = None) -> list[dict]:
+        return await self._bi_batch(BI_V2_CANDIDATES_SUBMITTALS_PATH, "candidateIds", ids, budget)
 
     async def bi_candidate_experience(self, candidate_id: str) -> list[dict]:
         return as_list(await self.request("GET", BI_CANDIDATE_EXPERIENCE_PATH, params={"employeeId": candidate_id}))

@@ -49,16 +49,45 @@ async def test_talent_search_refuses_an_unfiltered_query(tmp_path):
     await client.aclose()
 
 
-async def test_job_submittal_sweep_returns_every_submittal_and_is_cached(tmp_path):
+async def test_job_submittals_come_from_bi_and_are_cached(tmp_path):
     transport = MockJobDivaTransport()
-    client = make_client(make_settings(tmp_path), transport)
+    client = make_client(make_settings(tmp_path, jobdiva_use_bi=True), transport)
+    job_id = str(transport.ds.submittals[0]["job id in jd"])
+    expected = {s["submittal id"] for s in transport.ds.submittals if str(s["job id in jd"]) == job_id}
+    rows = await client.job_submittals(job_id)
+    assert {r["id"] for r in rows} == expected
+    calls = len(transport.calls)
+    await client.job_submittals(job_id)
+    assert len(transport.calls) == calls  # served from the short-lived cache
+    await client.aclose()
+
+
+async def test_fallback_sweep_drops_rows_from_other_jobs(tmp_path):
+    """Live quirk: with a name wildcard JobDiva ignores `jobid`; the sweep must keep only this job's rows."""
+    transport = MockJobDivaTransport()
+    client = make_client(make_settings(tmp_path, jobdiva_use_bi=False), transport)
     job_id = str(transport.ds.submittals[0]["job id in jd"])
     expected = {s["submittal id"] for s in transport.ds.submittals if str(s["job id in jd"]) == job_id}
     rows = await client.job_submittals(job_id)
     assert {r["submittalid"] for r in rows} == expected
-    calls = len(transport.calls)
-    await client.job_submittals(job_id)
-    assert len(transport.calls) == calls  # served from the short-lived cache
+    await client.aclose()
+
+
+async def test_linked_candidates_differ_per_job(tmp_path):
+    from app.services.candidates import linked_candidates
+
+    transport = MockJobDivaTransport()
+    client = make_client(make_settings(tmp_path, jobdiva_use_bi=True), transport)
+    jobs = sorted({str(s["job id in jd"]) for s in transport.ds.submittals})[:5]
+    seen = []
+    for job_id in jobs:
+        result = await linked_candidates(client, job_id)
+        ids = {i["candidate_id"] for i in result["items"]}
+        submitted = {str(s["candidate id in jd"]) for s in transport.ds.submittals if str(s["job id in jd"]) == job_id}
+        assert submitted <= ids  # every real submittal is listed
+        assert all(i["name"] and not i["name"].startswith("Candidate ") for i in result["items"])  # names filled
+        seen.append(ids)
+    assert len({frozenset(x) for x in seen}) > 1  # not the same list for every job
     await client.aclose()
 
 

@@ -277,6 +277,13 @@ def map_submittal(row: dict, index: int) -> list[Interaction]:
     job_id = as_str(pick(row, "jobidinjd", "jobid"))
     job_title = as_str(pick(row, "jobtitle", "positiontitle", "title"))
     status = as_str(pick(row, "submittalstatus", "startstatus", "status", "pipelinestage"))
+    # BI submittal rows carry flags instead of a status or interview/hire dates.
+    flags = {
+        k: str(row.get(k, "")).strip().lower() in ("1", "true", "y", "yes")
+        for k in ("rejectflag", "interviewflag", "hireflag")
+    }
+    if not status and any(flags.values()):
+        status = "Hired" if flags["hireflag"] else "Rejected" if flags["rejectflag"] else "Interviewed"
     notes = clean_text(pick(row, "internalnotes", "notes", "comments"))
     reject = clean_text(pick(row, "rejectioncomment", "rejectionreason", "rejectreason", "reason"))
     role = (job_title or (f"job {job_id}" if job_id else "a role")) + (f" at {client}" if client else "")
@@ -300,6 +307,8 @@ def map_submittal(row: dict, index: int) -> list[Interaction]:
             )
         )
     interview = iso(pick(row, "interviewdate", "dateinterview", "interviewscheduledate", "dateinterviewed"))
+    if not interview and flags["interviewflag"]:
+        interview = submitted
     if interview:
         out.append(
             Interaction(
@@ -314,6 +323,8 @@ def map_submittal(row: dict, index: int) -> list[Interaction]:
             )
         )
     hired = iso(pick(row, "hiredate", "startdate", "datehired", "datestarted"))
+    if not hired and flags["hireflag"]:
+        hired = submitted
     if hired:
         end = iso(pick(row, "enddate", "terminationdate"))
         text = f"Placed in {role}, started {hired}" + (f", ended {end}" if end else "") + "."
@@ -334,7 +345,7 @@ def map_submittal(row: dict, index: int) -> list[Interaction]:
     rejected = iso(
         pick(row, "extdaterejected", "daterejected", "rejecteddate", "externalrejectdate", "internalrejectdate")
     )
-    if reject or rejected:
+    if reject or rejected or flags["rejectflag"]:
         out.append(
             Interaction(
                 interaction_id=f"{base_id}-fb",

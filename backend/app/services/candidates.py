@@ -9,6 +9,7 @@ from app.clients.jobdiva.client import JobDivaClient
 from app.clients.jobdiva.errors import FATAL_ERRORS, JobDivaError, JobDivaNotFound
 from app.clients.jobdiva.mappers import (
     apply_work_history,
+    as_rows,
     as_str,
     candidate_id_of,
     dedupe_interactions,
@@ -28,11 +29,12 @@ from app.models.jobdiva import CandidateRecord, Interaction
 
 async def linked_candidates(client: JobDivaClient, job_id: str, page_size: int = 30) -> dict[str, Any]:
     """Submittals + starts for a job. One source failing still returns the other, with a warning."""
-    results = await asyncio.gather(
-        client.job_submittals(job_id),
-        client.job_starts(job_id, offset=0, max_returned=page_size),
-        return_exceptions=True,
-    )
+    calls = [client.job_submittals(job_id), client.job_starts(job_id, offset=0, max_returned=page_size)]
+    labels = [("submittals", "submittal"), ("starts", "start")]
+    if client.use_bi:
+        calls.append(client.bi_job_applicants(job_id))
+        labels.append(("applicants", "applicant"))
+    results = await asyncio.gather(*calls, return_exceptions=True)
     for r in results:
         if isinstance(r, FATAL_ERRORS):
             raise r
@@ -41,11 +43,12 @@ async def linked_candidates(client: JobDivaClient, job_id: str, page_size: int =
         raise failures[0]
     warnings = [
         f"Could not load {name} from JobDiva: {getattr(r, 'message', type(r).__name__)}"
-        for name, r in zip(("submittals", "starts"), results, strict=True)
+        for (name, _), r in zip(labels, results, strict=True)
         if isinstance(r, BaseException)
     ]
+    default_status = {"submittal": LINKED_SUBMITTAL_STATUS, "start": LINKED_START_STATUS, "applicant": "Applied"}
     items: dict[str, dict[str, Any]] = {}
-    for source, rows in zip(("submittal", "start"), results, strict=True):
+    for (_, source), rows in zip(labels, results, strict=True):
         if isinstance(rows, BaseException):
             continue
         for row in rows:
@@ -53,7 +56,7 @@ async def linked_candidates(client: JobDivaClient, job_id: str, page_size: int =
             rec = map_candidate(row) if cid else None
             if rec is None:
                 continue
-            date = iso(pick(row, "submittaldate", "startdate", "hiredate", "datecreated"))
+            date = iso(pick(row, "submittaldate", "dateapplied", "startdate", "hiredate", "datecreated"))
             status = as_str(pick(row, "submittalstatus", "startstatus", "status"))
             current = items.get(cid)
             if current is None or (date or "") > (current["date"] or ""):
@@ -63,10 +66,23 @@ async def linked_candidates(client: JobDivaClient, job_id: str, page_size: int =
                     "title": rec.title,
                     "city": rec.city,
                     "state": rec.state,
-                    "status": status or (LINKED_START_STATUS if source == "start" else LINKED_SUBMITTAL_STATUS),
+                    "status": status or default_status[source],
                     "date": date,
                     "source": source,
                 }
+    if client.use_bi and items:  # BI submittal rows carry only ids: fill names and current titles in one batch
+        try:
+            for row in await client.bi_candidates_profiles(list(items)):
+                cid = candidate_id_of(row)
+                if cid in items:
+                    rec = map_candidate(row)
+                    if rec is not None:
+                        apply_work_history(rec, as_rows(pick(row, "experience")))
+                        items[cid].update(name=rec.name, title=rec.title, city=rec.city, state=rec.state)
+        except FATAL_ERRORS:
+            raise
+        except JobDivaError as exc:
+            warnings.append(f"Could not load candidate names from JobDiva: {exc.message}")
     return {"items": sorted(items.values(), key=lambda x: x["date"] or "", reverse=True), "warnings": warnings}
 
 
@@ -167,7 +183,9 @@ async def interactions(
 ) -> dict[str, Any]:
     """Starts/activities across all jobs, plus submittals to `job_id` (JobDiva requires a job for submittals)."""
     results = await asyncio.gather(
-        client.candidate_job_submittals(candidate_id, job_id) if job_id else _no_rows(),
+        client.bi_candidate_submittals(candidate_id)  # all jobs, with interview/hire/reject flags
+        if client.use_bi
+        else (client.candidate_job_submittals(candidate_id, job_id) if job_id else _no_rows()),
         client.candidate_starts(candidate_id, max_returned=settings.jobdiva_page_size),
         return_exceptions=True,
     )

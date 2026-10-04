@@ -110,6 +110,12 @@ async def enrich_stage2(
                 has_notes = any(i.type in ("notes", "recorded_conversations") for i in rec.interactions)
                 rec.source_status["notes"] = "ok" if has_notes else "none"
 
+        sub_rows = await _batch(pool, "submittal history", lambda: client.bi_candidates_submittals(ids, budget=budget))
+        for i, row in enumerate(sub_rows or []):
+            cid = candidate_id_of(row)
+            if cid in records:
+                records[cid].interactions.extend(map_submittal(row, 2000 + i))
+
         profile_rows = await _batch(pool, "work history", lambda: client.bi_candidates_profiles(ids, budget=budget))
         for row in profile_rows or []:
             cid = candidate_id_of(row)

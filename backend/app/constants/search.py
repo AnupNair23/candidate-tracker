@@ -20,6 +20,7 @@ LINKED_QUERY_LABEL = "Already linked to this job"
 # Status shown for a job-linked candidate when JobDiva gives none.
 LINKED_SUBMITTAL_STATUS = "Submitted"
 LINKED_START_STATUS = "Started"
+LINKED_APPLICANT_STATUS = "Applied"
 
 LINKED_STARTS_PAGES = 2  # searchStart pages fetched for candidates already linked to the job
 # TalentSearch query plan (strict → broad). Queries are national: the `states` filter took ~20 s per query live and

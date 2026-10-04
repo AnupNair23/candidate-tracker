@@ -414,7 +414,11 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
                 return self._error(
                     "Error: missing job parameters: Job Ref#, Company name. Please specify job ID or job parameters."
                 )
-            rows = [s for s in self.ds.submittals if str(s["job id in jd"]) == q.get("jobid", "")]
+            # Live quirk: with a last-name wildcard JobDiva ignores `jobid` and matches submittals on any job.
+            if q.get("candidatelastname", "").endswith("%"):
+                rows = list(self.ds.submittals)
+            else:
+                rows = [s for s in self.ds.submittals if str(s["job id in jd"]) == q.get("jobid", "")]
             if q.get("candidateid"):
                 rows = [s for s in rows if str(s["candidate id in jd"]) == q["candidateid"]]
             last = q.get("candidatelastname")
@@ -602,6 +606,46 @@ class MockJobDivaTransport(httpx.AsyncBaseTransport):
                 if int(i) % 3 == 0
             ]
             return self._objects(rows)
+
+        def bi_submittal(sub: dict) -> dict:
+            status = sub["submittal status"]
+            return {
+                "ID": sub["submittal id"],
+                "CANDIDATEID": sub["candidate id in jd"],
+                "JOBID": sub["job id in jd"],
+                "SUBMITTALDATE": f"{sub['submittal date']}T09:00:00",
+                "PRIMARYRECRUITERNAME": "Jenna O.",
+                "INTERVIEWFLAG": "1" if status in ("Interview", "Rejected", "Placed") else "0",
+                "REJECTFLAG": "1" if status == "Rejected" else "0",
+                "HIREFLAG": "1" if status == "Placed" else "0",
+            }
+
+        if path == "/api/bi/JobSubmittalsDetail":  # live rows carry no JOBID column
+            rows = [bi_submittal(x) for x in self.ds.submittals if str(x["job id in jd"]) == q.get("jobId")]
+            return self._table([{k: v for k, v in r.items() if k != "JOBID"} for r in rows])
+        if path == "/api/bi/JobApplicantsDetail":
+            job = q.get("jobId", "")
+            rows = [
+                {
+                    "CANDIDATEID": c["candidateId"],
+                    "FIRSTNAME": c["firstName"],
+                    "LASTNAME": c["lastName"],
+                    "JOBID": job,
+                    "DATEAPPLIED": "2026-09-20T10:00:00",
+                    "STATUS": "New",
+                }
+                for c in self.ds.candidates
+                if job and (int(c["candidateId"]) + int(job)) % 37 == 0
+            ]
+            return self._table(rows)
+        if path == "/api/bi/CandidateSubmittalsDetail":
+            cid = q.get("candidateid", "")
+            return self._table([bi_submittal(x) for x in self.ds.submittals if str(x["candidate id in jd"]) == cid])
+        if path == "/apiv2/bi/CandidatesSubmittalsDetail":
+            wanted = set(ids)
+            return self._objects(
+                [bi_submittal(x) for x in self.ds.submittals if str(x["candidate id in jd"]) in wanted]
+            )
         if path == "/apiv2/bi/CandidatesProfileDetail":
             return self._objects(
                 [{**profile(by_id[i]), "EXPERIENCE": experience(by_id[i]), "EDUCATION": []} for i in ids]
